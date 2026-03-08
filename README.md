@@ -91,6 +91,14 @@ Notlar:
 - Kod `main.py` ile direkt çalışır.
 - Bu image yapısı GitHub Actions tarafında da tekrar kullanılabilir.
 
+### Gizli Konfigürasyon (GitHub Actions)
+
+`departureInfo.json` dosyasını public repoda tutmak istemiyorsanız, aşağıdaki secret'ı tanımlayın:
+
+- `DEPARTURE_INFO_JSON`: `departureInfo.json` içeriğinin tamamı (tek satır JSON metni)
+
+Workflow bu secret'tan kombinasyonları okur. Örnek değer için `departureInfo.example.json` kullanılabilir.
+
 ## Dosya Yapısı
 
 - `main.py`: Ana program dosyası, TCDD web sitesini kontrol eder ve kombinasyon döngüsünü yönetir

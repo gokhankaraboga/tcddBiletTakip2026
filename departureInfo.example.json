@@ -1,0 +1,12 @@
+{
+  "searches": [
+    {
+      "NEREDEN": "ANKARA GAR , ANKARA",
+      "NEREYE": "İSTANBUL(HALKALI) , İSTANBUL",
+      "TARIH": "01.01.2026",
+      "SAAT_BASLANGIC": "06:00",
+      "SAAT_BITIS": "18:00",
+      "MIN_KOLTUK": 1
+    }
+  ]
+}

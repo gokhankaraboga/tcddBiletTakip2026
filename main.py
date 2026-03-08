@@ -25,8 +25,21 @@ def _validate_config(cfg):
     }
 
 def arama_konfigurasyonlarini_oku():
-    """Öncelikle departureInfo.json, yoksa departureInfo.txt okur."""
+    """Öncelikle env(DEPARTURE_INFO_JSON), yoksa departureInfo.json, yoksa departureInfo.txt okur."""
     try:
+        env_json = os.getenv("DEPARTURE_INFO_JSON", "").strip()
+        if env_json:
+            data = json.loads(env_json)
+            if isinstance(data, dict):
+                searches = data.get("searches", [])
+            elif isinstance(data, list):
+                searches = data
+            else:
+                searches = []
+            if not isinstance(searches, list) or not searches:
+                raise ValueError("DEPARTURE_INFO_JSON içinde dolu bir liste veya 'searches' listesi olmalı.")
+            return [_validate_config(cfg) for cfg in searches]
+
         if os.path.exists("departureInfo.json"):
             with open("departureInfo.json", "r", encoding="utf-8") as f:
                 data = json.load(f)

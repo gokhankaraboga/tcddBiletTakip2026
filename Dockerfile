@@ -48,7 +48,7 @@ WORKDIR /app
 COPY requirements.txt ./
 RUN pip install --no-cache-dir -r requirements.txt
 
-COPY main.py sendTelegram.py departureInfo.json ./
+COPY main.py sendTelegram.py ./
 
 # These defaults match Debian package install paths in this image.
 ENV CHROMIUM_PATH=/usr/bin/chromium
