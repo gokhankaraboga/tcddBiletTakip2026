@@ -11,8 +11,8 @@ on:
         options:
           - "true"
           - "false"
-  schedule:
-    - cron: "*/10 4-22 * * *"
+  repository_dispatch:
+    types: [tcdd-check]
 
 permissions:
   contents: read
