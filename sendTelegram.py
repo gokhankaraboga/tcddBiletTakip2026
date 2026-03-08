@@ -1,6 +1,5 @@
 import requests
 import os
-from datetime import datetime
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -18,19 +17,15 @@ class TelegramBot:
         if not uygun_seferler:
             return
 
-        filtered_lines = [f"{s['saat']}    {s['bos_koltuk']}" for s in uygun_seferler]
+        filtered_lines = [f"{s['saat']}: {s['bos_koltuk']}" for s in uygun_seferler]
         body = "\n".join(filtered_lines)
-        filtered_content = (
-            f"{nereden} - {nereye} için {tarih} tarihinde gidiş seferleri:\n\n"
-            f"Kriter: {saat_baslangic}-{saat_bitis}, en az {min_koltuk} koltuk\n\n"
-            "Saat   Boş Koltuk\n"
-            "--------------------\n"
-            f"{body}"
-        )
 
         # Mesajı gönder
         url = f"https://api.telegram.org/bot{self.BOT_TOKEN}/sendMessage"
-        message = f"TCDD Sefer Bilgileri - {datetime.now().strftime('%d.%m.%Y %H:%M')}\n\n{filtered_content}"
+        message = (
+            f"{nereden} -> {nereye} | {tarih}\n"
+            f"Uygun:\n{body}"
+        )
         
         response = requests.post(url, data={
             "chat_id": self.chat_id,

@@ -3,6 +3,7 @@ from selenium.webdriver.common.by import By
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
 from selenium.webdriver.chrome.service import Service
+import argparse
 import os
 import time
 import re
@@ -77,7 +78,6 @@ class TCDDBiletKontrol:
         self.options.add_argument('--disable-dev-tools')
         self.options.add_argument('--disable-extensions')
         self.options.add_argument('--no-zygote')
-        self.options.add_argument('--single-process')
         self.options.add_argument('--user-data-dir=/tmp/chrome-user-data')
         self.options.add_argument('--data-path=/tmp/chrome-data')
         self.options.add_argument('--disk-cache-dir=/tmp/chrome-cache')
@@ -142,11 +142,9 @@ class TCDDBiletKontrol:
             sefer_saat_koltuk = {}
 
             vagon_butonlari = self.driver.find_elements(By.CSS_SELECTOR, "button[id*='-vagonType-']")
-            print(f"DEBUG: Found {len(vagon_butonlari)} wagon buttons")
 
             for buton in vagon_butonlari:
                 buton_text = (buton.get_attribute("innerText") or "").strip()
-                print(f"DEBUG: Button text: {buton_text}")
                 tip_normalized = (buton_text
                     .upper()
                     .replace("İ", "I")
@@ -158,12 +156,10 @@ class TCDDBiletKontrol:
                 )
 
                 if not any(allowed in tip_normalized for allowed in allowed_types):
-                    print(f"DEBUG: Skipping button - not allowed type: {tip_normalized}")
                     continue
 
                 koltuk_eslesme = re.search(r"\((\d+)\)", buton_text)
                 koltuk_sayisi = int(koltuk_eslesme.group(1)) if koltuk_eslesme else 0
-                print(f"DEBUG: Found {koltuk_sayisi} seats for {buton_text}")
 
                 if koltuk_sayisi <= 0:
                     continue
@@ -268,6 +264,20 @@ class TCDDBiletKontrol:
             print(f"Bir hata oluştu: {str(e)}")
             return None
 
+    def _sefer_sonuclarini_bekle(self, timeout=25):
+        """
+        Sefer arama sonrasında sonuçların yüklenmesini bekler.
+        True: sefer elemanı bulundu
+        False: timeout içinde sefer elemanı bulunamadı
+        """
+        end_time = time.time() + timeout
+        while time.time() < end_time:
+            bulunan_seferler = self.driver.find_elements(By.CSS_SELECTOR, "time[title^='Gidiş']")
+            if bulunan_seferler:
+                return True
+            time.sleep(0.5)
+        return False
+
     def seferleri_filtrele(self, sefer_bilgileri, saat_baslangic, saat_bitis, min_koltuk):
         bas = datetime.strptime(saat_baslangic, "%H:%M").time()
         bit = datetime.strptime(saat_bitis, "%H:%M").time()
@@ -301,10 +311,29 @@ class TCDDBiletKontrol:
             sefer_ara_button = WebDriverWait(self.driver, 5).until(
                 EC.element_to_be_clickable((By.ID, "searchSeferButton"))
             )
-            self.driver.execute_script("arguments[0].click();", sefer_ara_button)
-            time.sleep(2)
-            bulunan_seferler = self.driver.find_elements(By.CSS_SELECTOR, "time[title^='Gidiş']")
-            if not bulunan_seferler:
+            sefer_bulundu = False
+            for deneme in range(1, 4):
+                self.driver.execute_script("arguments[0].click();", sefer_ara_button)
+                if self._sefer_sonuclarini_bekle(timeout=25):
+                    sefer_bulundu = True
+                    break
+                print(
+                    f"Sefer sonucu henüz yüklenmedi ({deneme}/3): "
+                    f"{nereden} - {nereye} | {tarih}"
+                )
+                try:
+                    self.sayfayi_sifirla()
+                    self.istasyon_sec("fromTrainInput", nereden)
+                    self.istasyon_sec("toTrainInput", nereye)
+                    if not self.tarih_sec(tarih):
+                        return None
+                    sefer_ara_button = WebDriverWait(self.driver, 5).until(
+                        EC.element_to_be_clickable((By.ID, "searchSeferButton"))
+                    )
+                except Exception:
+                    pass
+
+            if not sefer_bulundu:
                 print(f"Sefer yok! {nereden} - {nereye} | {tarih}")
                 return {"status": "no_trip"}
 
@@ -392,9 +421,60 @@ def run_checks(kombinasyonlar=None, send_notification=True):
     finally:
         kontrol.kapat()
 
+
+def _parse_bool_text(value):
+    return str(value).strip().lower() == "true"
+
+
+def _secili_kombinasyonlari_hazirla(combo_index):
+    kombinasyonlar = arama_konfigurasyonlarini_oku()
+    if combo_index is None:
+        return kombinasyonlar
+    if combo_index < 0 or combo_index >= len(kombinasyonlar):
+        raise ValueError(
+            f"Geçersiz COMBO_INDEX: {combo_index}. "
+            f"Geçerli aralık: 0..{max(len(kombinasyonlar)-1, 0)}"
+        )
+    return [kombinasyonlar[combo_index]]
+
+
+def _argumanlari_oku():
+    parser = argparse.ArgumentParser()
+    parser.add_argument(
+        "--combo-index",
+        type=int,
+        default=None,
+        help="Sadece belirli bir kombinasyonu çalıştırır (0 tabanlı indeks).",
+    )
+    parser.add_argument(
+        "--send-telegram",
+        choices=["true", "false"],
+        default=None,
+        help="Telegram gönderimini zorlar (true/false).",
+    )
+    return parser.parse_args()
+
 def main():
-    send_notification = os.getenv("SEND_TELEGRAM", "true").lower() == "true"
-    run_checks(send_notification=send_notification)
+    args = _argumanlari_oku()
+
+    if args.send_telegram is not None:
+        send_notification = _parse_bool_text(args.send_telegram)
+    else:
+        send_notification = _parse_bool_text(os.getenv("SEND_TELEGRAM", "true"))
+
+    if args.combo_index is not None:
+        combo_index = args.combo_index
+    else:
+        combo_env = os.getenv("COMBO_INDEX")
+        combo_index = int(combo_env) if combo_env not in (None, "") else None
+
+    kombinasyonlar = _secili_kombinasyonlari_hazirla(combo_index)
+    if combo_index is not None:
+        print(f"Sadece COMBO_INDEX={combo_index} çalıştırılıyor.")
+
+    result = run_checks(kombinasyonlar=kombinasyonlar, send_notification=send_notification)
+    if not result.get("ok"):
+        raise SystemExit(1)
 
 if __name__ == "__main__":
     main()
