@@ -4,75 +4,85 @@ Bu program, TCDD'nin e-bilet sistemindeki tren seferlerini otomatik olarak kontr
 
 ## Özellikler
 
-- Belirtilen güzergah için tren seferlerini otomatik kontrol
-- Belirlenen saat aralığında sefer filtreleme
-- Minimum boş koltuk sayısına göre filtreleme
-- Telegram üzerinden anlık bildirim
-- Otomatik periyodik kontrol (PowerShell script ile)
+- Birden fazla arama kombinasyonunu (`departureInfo.json`) üstten alta sırayla kontrol eder
+- İlk uygun sonucu bulduğunda Telegram bildirimi gönderir ve döngüyü durdurur
+- Saat aralığına ve minimum koltuk sayısına göre filtreleme yapar
+- Sadece `BUSINESS`, `LOCA`, `EKONOMİ` koltuk tiplerini dikkate alır
+- `TEKERLEKLİ SANDALYE` koltuk tipini hariç tutar
+- Chromium'u headless modda çalıştırır
 
 ## Gereksinimler
 
 - Python 3.x
 - Selenium
-- webdriver-manager
 - requests
+- python-dotenv
+- Yerel `chromedriver` binary'si (proje kökünde)
+- Chromium (varsayılan yol: `/Applications/Chromium.app/Contents/MacOS/Chromium`)
 
 ## Kurulum
 
 1. Gerekli Python paketlerini yükleyin:
 ```bash
-pip install selenium webdriver-manager requests
+pip install -r requirements.txt
 ```
 
-2. Telegram bot token'ınızı ve chat ID'nizi `sendTelegram.py` dosyasında güncelleyin.
+2. Telegram bilgilerini `.env` dosyasına girin:
+```env
+TELEGRAM_BOT_TOKEN=YOUR_BOT_TOKEN_HERE
+TELEGRAM_CHAT_ID=YOUR_CHAT_ID_HERE
+```
 
 ## Kullanım
 
-### Sefer Bilgilerini Ayarlama
+### Arama Kombinasyonlarını Ayarlama
 
-`departureInfo.txt` dosyasını aşağıdaki formatta düzenleyin: 
-NEREDEN=İSTANBUL(BOSTANCI) , İSTANBUL
-NEREYE=ESKİŞEHİR
-TARIH=29.03.2025
-SAAT BASLANGIC=06:00
-SAAT BITIS=13:00
-KOLTUK SAYISI>=2
+`departureInfo.json` dosyasını aşağıdaki formatta düzenleyin:
+
+```json
+{
+  "searches": [
+    {
+      "NEREDEN": "KARAMAN , KARAMAN",
+      "NEREYE": "İSTANBUL(HALKALI) , İSTANBUL",
+      "TARIH": "24.03.2026",
+      "SAAT_BASLANGIC": "06:00",
+      "SAAT_BITIS": "18:00",
+      "MIN_KOLTUK": 1
+    },
+    {
+      "NEREDEN": "KARAMAN , KARAMAN",
+      "NEREYE": "İSTANBUL(HALKALI) , İSTANBUL",
+      "TARIH": "25.03.2026",
+      "SAAT_BASLANGIC": "06:00",
+      "SAAT_BITIS": "18:00",
+      "MIN_KOLTUK": 1
+    }
+  ]
+}
+```
+
+Not: `departureInfo.txt` tek kombinasyon için geriye dönük uyumluluk amacıyla hala desteklenir.
 
 ### Programı Çalıştırma
 
-PowerShell üzerinden otomatik kontrol için:
-1. PowerShell'i yönetici olarak açın
-2. Proje dizinine gidin
-3. Aşağıdaki komutu çalıştırın:
-```powershell
-.\runProject.ps1
+```bash
+.venv/bin/python main.py
 ```
 
 ## Dosya Yapısı
 
-- `main.py`: Ana program dosyası, TCDD web sitesini kontrol eder
+- `main.py`: Ana program dosyası, TCDD web sitesini kontrol eder ve kombinasyon döngüsünü yönetir
 - `sendTelegram.py`: Telegram mesaj gönderme işlemlerini yönetir
-- `departureInfo.txt`: Sefer arama kriterleri
-- `departureTimes.txt`: Bulunan seferlerin kaydedildiği dosya
-- `runProject.ps1`: Otomatik kontrol için PowerShell script
-
-tcddBiletTakip/
-│
-├── main.py # Ana program dosyası
-├── sendTelegram.py # Telegram mesaj gönderme modülü
-├── runProject.ps1 # PowerShell otomatik çalıştırma scripti
-│
-├── departureInfo.txt # Sefer arama kriterleri
-├── departureTimes.txt # Bulunan seferlerin kayıtları
-│
-└── README.md # Proje dokümantasyonu
+- `departureInfo.json`: Birden fazla arama kombinasyonu
+- `.env`: Telegram kimlik bilgileri (git'e eklenmemeli)
+- `runProject.ps1`: PowerShell otomatik çalıştırma scripti
 
 ## Çalışma Mantığı
 
-1. Program her dakika çalışır
-2. TCDD web sitesinden sefer bilgilerini çeker
-3. Bulunan seferleri `departureTimes.txt` dosyasına kaydeder
-4. Belirtilen kriterlere (saat aralığı ve koltuk sayısı) uyan seferler varsa:
-   - Telegram üzerinden bildirim gönderir
-5. Kriterlere uyan sefer yoksa:
-   - Bildirim göndermez ve bir sonraki kontrolü bekler
+1. `searches` listesindeki kombinasyonlar sırayla çalıştırılır
+2. Her kombinasyonda sefer var/yok kontrolü yapılır
+3. Sefer varsa sadece `BUSINESS/LOCA/EKONOMİ` tiplerindeki boş koltuklar toplanır
+4. Saat aralığı + minimum koltuk filtresi uygulanır
+5. İlk uygun sonuçta Telegram mesajı gönderilir ve döngü sonlanır
+6. Hiçbir kombinasyonda uygun sonuç yoksa bildirim gönderilmez
