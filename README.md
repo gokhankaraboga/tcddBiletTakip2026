@@ -70,6 +70,27 @@ Not: `departureInfo.txt` tek kombinasyon için geriye dönük uyumluluk amacıyl
 .venv/bin/python main.py
 ```
 
+### Docker ile Çalıştırma
+
+1. Image build:
+```bash
+docker build -t tcdd-bilet-takip:local .
+```
+
+2. Container çalıştırma:
+```bash
+docker run --rm \
+  --env-file .env \
+  -e SEND_TELEGRAM=false \
+  -v "$(pwd)/departureInfo.json:/app/departureInfo.json:ro" \
+  tcdd-bilet-takip:local
+```
+
+Notlar:
+- Container içinde Chromium + Chromedriver hazır gelir.
+- Kod `main.py` ile direkt çalışır.
+- Bu image yapısı GitHub Actions tarafında da tekrar kullanılabilir.
+
 ## Dosya Yapısı
 
 - `main.py`: Ana program dosyası, TCDD web sitesini kontrol eder ve kombinasyon döngüsünü yönetir

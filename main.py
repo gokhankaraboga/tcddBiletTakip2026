@@ -57,7 +57,7 @@ def arama_konfigurasyonlarini_oku():
         return []
 
 class TCDDBiletKontrol:
-    CHROMIUM_PATH = "/Applications/Chromium.app/Contents/MacOS/Chromium"
+    CHROMIUM_PATH = os.environ.get("CHROMIUM_PATH", "/Applications/Chromium.app/Contents/MacOS/Chromium")
     CHROMEDRIVER_PATH = os.environ.get(
         "CHROMEDRIVER_PATH",
         os.path.join(os.path.dirname(__file__), "chromedriver")
@@ -68,13 +68,32 @@ class TCDDBiletKontrol:
         self.options = webdriver.ChromeOptions()
         self.options.binary_location = self.CHROMIUM_PATH
         self.options.add_argument('--headless=new')
-        self.options.add_argument('--disable-gpu')
-        self.options.add_argument('--no-sandbox')
-        self.options.add_argument('--disable-dev-shm-usage')
         self.options.add_argument('--window-size=1920,1080')
+        self.options.add_argument('--disable-gpu')
+        self.options.add_argument('--enable-javascript')
+        self.options.add_argument('--no-sandbox')
+        self.options.add_argument('--disable-setuid-sandbox')
+        self.options.add_argument('--disable-dev-shm-usage')
+        self.options.add_argument('--disable-dev-tools')
+        self.options.add_argument('--disable-extensions')
+        self.options.add_argument('--no-zygote')
+        self.options.add_argument('--single-process')
+        self.options.add_argument('--user-data-dir=/tmp/chrome-user-data')
+        self.options.add_argument('--data-path=/tmp/chrome-data')
+        self.options.add_argument('--disk-cache-dir=/tmp/chrome-cache')
+        self.options.add_argument('--user-agent=Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36')
         self.driver = None
 
     def tarayici_baslat(self):
+        # Clean up temporary Chrome profile/cache directories between runs
+        import shutil
+        for item in ['/tmp/chrome-user-data', '/tmp/chrome-data', '/tmp/chrome-cache']:
+            if os.path.exists(item):
+                try:
+                    shutil.rmtree(item, ignore_errors=True)
+                except:
+                    pass
+
         self.driver = webdriver.Chrome(service=self.service, options=self.options)
         self.sayfayi_sifirla()
 
@@ -111,16 +130,23 @@ class TCDDBiletKontrol:
 
     def sefer_bilgilerini_al(self):
         try:
-            WebDriverWait(self.driver, 10).until(
+            # Wait longer for page to load completely
+            WebDriverWait(self.driver, 20).until(
                 EC.presence_of_element_located((By.CSS_SELECTOR, "time[title^='Gidiş']"))
             )
+
+            # Give extra time for all elements to render
+            time.sleep(3)
 
             allowed_types = {"BUSINESS", "LOCA", "EKONOMI"}
             sefer_saat_koltuk = {}
 
             vagon_butonlari = self.driver.find_elements(By.CSS_SELECTOR, "button[id*='-vagonType-']")
+            print(f"DEBUG: Found {len(vagon_butonlari)} wagon buttons")
+
             for buton in vagon_butonlari:
                 buton_text = (buton.get_attribute("innerText") or "").strip()
+                print(f"DEBUG: Button text: {buton_text}")
                 tip_normalized = (buton_text
                     .upper()
                     .replace("İ", "I")
@@ -132,10 +158,12 @@ class TCDDBiletKontrol:
                 )
 
                 if not any(allowed in tip_normalized for allowed in allowed_types):
+                    print(f"DEBUG: Skipping button - not allowed type: {tip_normalized}")
                     continue
 
                 koltuk_eslesme = re.search(r"\((\d+)\)", buton_text)
                 koltuk_sayisi = int(koltuk_eslesme.group(1)) if koltuk_eslesme else 0
+                print(f"DEBUG: Found {koltuk_sayisi} seats for {buton_text}")
 
                 if koltuk_sayisi <= 0:
                     continue
@@ -310,16 +338,26 @@ class TCDDBiletKontrol:
         if self.driver:
             self.driver.quit()
 
-def main():
-    kombinasyonlar = arama_konfigurasyonlarini_oku()
+def run_checks(kombinasyonlar=None, send_notification=True):
+    if kombinasyonlar is None:
+        kombinasyonlar = arama_konfigurasyonlarini_oku()
+    else:
+        kombinasyonlar = [_validate_config(k) for k in kombinasyonlar]
+
     if not kombinasyonlar:
-        return
+        return {
+            "ok": False,
+            "checked": 0,
+            "matched": False,
+            "message": "Konfigürasyon bulunamadı veya geçersiz."
+        }
 
     kontrol = TCDDBiletKontrol()
+    checked = 0
     try:
         kontrol.tarayici_baslat()
-        bulundu = False
         for i, kombinasyon in enumerate(kombinasyonlar, start=1):
+            checked += 1
             print(
                 f"\n[{i}/{len(kombinasyonlar)}] Kontrol: "
                 f"{kombinasyon['NEREDEN']} -> {kombinasyon['NEREYE']} | {kombinasyon['TARIH']}"
@@ -327,23 +365,36 @@ def main():
             kontrol.sayfayi_sifirla()
             sonuc = kontrol.bilet_kontrol_kombinasyon(kombinasyon)
             if sonuc and sonuc.get("status") == "found":
-                from sendTelegram import send_telegram_message
-                send_telegram_message(
-                    sonuc["uygun_seferler"],
-                    sonuc["nereden"],
-                    sonuc["nereye"],
-                    sonuc["tarih"],
-                    sonuc["saat_baslangic"],
-                    sonuc["saat_bitis"],
-                    sonuc["min_koltuk"],
-                )
-                bulundu = True
-                break
+                if send_notification:
+                    from sendTelegram import send_telegram_message
+                    send_telegram_message(
+                        sonuc["uygun_seferler"],
+                        sonuc["nereden"],
+                        sonuc["nereye"],
+                        sonuc["tarih"],
+                        sonuc["saat_baslangic"],
+                        sonuc["saat_bitis"],
+                        sonuc["min_koltuk"],
+                    )
+                return {
+                    "ok": True,
+                    "checked": checked,
+                    "matched": True,
+                    "result": sonuc
+                }
 
-        if not bulundu:
-            print("\nHiçbir kombinasyonda uygun koltuk bulunamadı.")
+        print("\nHiçbir kombinasyonda uygun koltuk bulunamadı.")
+        return {
+            "ok": True,
+            "checked": checked,
+            "matched": False
+        }
     finally:
         kontrol.kapat()
+
+def main():
+    send_notification = os.getenv("SEND_TELEGRAM", "true").lower() == "true"
+    run_checks(send_notification=send_notification)
 
 if __name__ == "__main__":
     main()
