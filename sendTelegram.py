@@ -17,7 +17,10 @@ class TelegramBot:
         if not uygun_seferler:
             return
 
-        filtered_lines = [f"{s['saat']}: {s['bos_koltuk']}" for s in uygun_seferler]
+        filtered_lines = []
+        for s in uygun_seferler:
+            saat_metni = s.get("segment_saatleri") or s.get("saat", "")
+            filtered_lines.append(f"{saat_metni}: {s['bos_koltuk']}")
         body = "\n".join(filtered_lines)
 
         # Mesajı gönder

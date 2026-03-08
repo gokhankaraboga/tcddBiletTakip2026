@@ -6,6 +6,7 @@ Bu program, TCDD'nin e-bilet sistemindeki tren seferlerini otomatik olarak kontr
 
 - Birden fazla arama kombinasyonunu (`departureInfo.json`) üstten alta sırayla kontrol eder
 - İlk uygun sonucu bulduğunda Telegram bildirimi gönderir ve döngüyü durdurur
+- Aktarmalı seferlerde tüm ayaklarda uygun koltuk yoksa bildirim göndermez
 - Saat aralığına ve minimum koltuk sayısına göre filtreleme yapar
 - Sadece `BUSINESS`, `LOCA`, `EKONOMİ` koltuk tiplerini dikkate alır
 - `TEKERLEKLİ SANDALYE` koltuk tipini hariç tutar
@@ -44,16 +45,8 @@ TELEGRAM_CHAT_ID=YOUR_CHAT_ID_HERE
   "searches": [
     {
       "NEREDEN": "KARAMAN , KARAMAN",
-      "NEREYE": "İSTANBUL(HALKALI) , İSTANBUL",
+      "NEREYE": "İSTANBUL(SÖĞÜTLÜÇEŞME) , İSTANBUL",
       "TARIH": "24.03.2026",
-      "SAAT_BASLANGIC": "06:00",
-      "SAAT_BITIS": "18:00",
-      "MIN_KOLTUK": 1
-    },
-    {
-      "NEREDEN": "KARAMAN , KARAMAN",
-      "NEREYE": "İSTANBUL(HALKALI) , İSTANBUL",
-      "TARIH": "25.03.2026",
       "SAAT_BASLANGIC": "06:00",
       "SAAT_BITIS": "18:00",
       "MIN_KOLTUK": 1
@@ -61,6 +54,8 @@ TELEGRAM_CHAT_ID=YOUR_CHAT_ID_HERE
   ]
 }
 ```
+
+Not: Aktarmalı seferlerde, her ayakta uygun (tekerlekli sandalye hariç) koltuk varsa uygun kabul edilir.
 
 Not: `departureInfo.txt` tek kombinasyon için geriye dönük uyumluluk amacıyla hala desteklenir.
 

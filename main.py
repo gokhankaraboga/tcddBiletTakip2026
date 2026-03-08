@@ -1,5 +1,6 @@
 from selenium import webdriver
 from selenium.webdriver.common.by import By
+from selenium.webdriver.common.keys import Keys
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
 from selenium.webdriver.chrome.service import Service
@@ -117,29 +118,39 @@ class TCDDBiletKontrol:
         )
 
     def istasyon_sec(self, input_id, istasyon_adi):
-        try:
-            istasyon_input = WebDriverWait(self.driver, 5).until(
-                EC.element_to_be_clickable((By.ID, input_id))
-            )
-            self.driver.execute_script("arguments[0].click();", istasyon_input)
+        son_hata = None
+        for deneme in range(1, 4):
+            try:
+                istasyon_input = WebDriverWait(self.driver, 8).until(
+                    EC.element_to_be_clickable((By.ID, input_id))
+                )
+                self.driver.execute_script("arguments[0].click();", istasyon_input)
+                istasyon_input.send_keys(Keys.CONTROL, "a")
+                istasyon_input.send_keys(Keys.COMMAND, "a")
+                istasyon_input.send_keys(Keys.DELETE)
+                istasyon_input.send_keys(istasyon_adi)
+                time.sleep(0.4)
 
-            WebDriverWait(self.driver, 5).until(
-                EC.presence_of_element_located((By.CSS_SELECTOR, "button.dropdown-item.station"))
-            )
+                WebDriverWait(self.driver, 8).until(
+                    EC.presence_of_element_located((By.CSS_SELECTOR, "button.dropdown-item.station"))
+                )
+                istasyon_butonlari = self.driver.find_elements(By.CSS_SELECTOR, "button.dropdown-item.station")
 
-            istasyon_butonlari = self.driver.find_elements(By.CSS_SELECTOR, "button.dropdown-item.station")
+                for buton in istasyon_butonlari:
+                    istasyon_text = buton.find_element(By.CLASS_NAME, "textLocation").text
+                    if istasyon_adi in istasyon_text:
+                        self.driver.execute_script("arguments[0].click();", buton)
+                        return True
 
-            for buton in istasyon_butonlari:
-                istasyon_text = buton.find_element(By.CLASS_NAME, "textLocation").text
-                if istasyon_adi in istasyon_text:
-                    self.driver.execute_script("arguments[0].click();", buton)
-                    return True
+                son_hata = Exception(f"'{istasyon_adi}' istasyonu bulunamadı!")
+            except Exception as e:
+                son_hata = e
 
-            raise Exception(f"'{istasyon_adi}' istasyonu bulunamadı!")
+            print(f"İstasyon seçim yeniden deneniyor ({deneme}/3): {input_id} -> {istasyon_adi}")
+            time.sleep(0.8)
 
-        except Exception as e:
-            print(f"İstasyon seçiminde hata: {str(e)}")
-            raise
+        print(f"İstasyon seçiminde hata: {str(son_hata)}")
+        raise son_hata
 
     def sefer_bilgilerini_al(self):
         try:
@@ -152,12 +163,40 @@ class TCDDBiletKontrol:
             time.sleep(3)
 
             allowed_types = {"BUSINESS", "LOCA", "EKONOMI"}
-            sefer_saat_koltuk = {}
+            journey_leg_koltuk = {}
+            journey_leg_saat = {}
+            journey_eligible_legs = {}
+            journey_all_legs = {}
+            segment_to_journey = {}
+            current_journey_slot = 0
 
             vagon_butonlari = self.driver.find_elements(By.CSS_SELECTOR, "button[id*='-vagonType-']")
 
             for buton in vagon_butonlari:
                 buton_text = (buton.get_attribute("innerText") or "").strip()
+                button_id = (buton.get_attribute("id") or "").strip()
+                id_match = re.match(r"^(.*)-vagonType-\d+-(\d+)-departure$", button_id)
+                if id_match:
+                    trip_id = id_match.group(1)
+                    leg_index = id_match.group(2)
+                    segment_id = f"{trip_id}:{leg_index}"
+                else:
+                    leg_index = "0"
+                    segment_id = button_id.split("-vagonType-")[0] if "-vagonType-" in button_id else button_id
+                    trip_id = segment_id.rsplit(":", 1)[0] if ":" in segment_id else segment_id
+                if not segment_id:
+                    continue
+
+                if segment_id not in segment_to_journey:
+                    if leg_index == "0":
+                        current_journey_slot += 1
+                    elif current_journey_slot == 0:
+                        current_journey_slot = 1
+                    segment_to_journey[segment_id] = f"journey-{current_journey_slot}"
+
+                journey_key = segment_to_journey[segment_id]
+                journey_all_legs.setdefault(journey_key, set()).add(leg_index)
+
                 tip_normalized = (buton_text
                     .upper()
                     .replace("İ", "I")
@@ -177,6 +216,9 @@ class TCDDBiletKontrol:
                 if koltuk_sayisi <= 0:
                     continue
 
+                if not button_id:
+                    continue
+
                 saat_text = self.driver.execute_script(
                     """
                     let el = arguments[0];
@@ -194,14 +236,34 @@ class TCDDBiletKontrol:
                     continue
 
                 saat = match.group(0)
-                sefer_saat_koltuk[saat] = sefer_saat_koltuk.get(saat, 0) + koltuk_sayisi
+                journey_leg_koltuk[(journey_key, leg_index)] = journey_leg_koltuk.get((journey_key, leg_index), 0) + koltuk_sayisi
+                journey_leg_saat[(journey_key, leg_index)] = saat
+                journey_eligible_legs.setdefault(journey_key, set()).add(leg_index)
 
             sefer_bilgileri = [
-                {"saat": saat, "bos_koltuk": str(koltuk)}
-                for saat, koltuk in sorted(sefer_saat_koltuk.items())
+                {
+                    "saat": sorted(
+                        [journey_leg_saat[(journey_key, leg)] for leg in eligible_legs],
+                        key=lambda h: datetime.strptime(h, "%H:%M")
+                    )[0],
+                    "bos_koltuk": str(min(journey_leg_koltuk[(journey_key, leg)] for leg in all_legs)),
+                    "segment_saatleri": " -> ".join(
+                        sorted(
+                            [journey_leg_saat[(journey_key, leg)] for leg in eligible_legs],
+                            key=lambda h: datetime.strptime(h, "%H:%M")
+                        )
+                    ),
+                    "segment_sayisi": len(all_legs),
+                }
+                for journey_key, all_legs in journey_all_legs.items()
+                for eligible_legs in [journey_eligible_legs.get(journey_key, set())]
+                if all_legs and all_legs.issubset(eligible_legs)
             ]
 
-            return sefer_bilgileri
+            return sorted(
+                sefer_bilgileri,
+                key=lambda s: datetime.strptime(s["saat"], "%H:%M")
+            )
 
         except Exception as e:
             print(f"Sefer bilgileri alınırken hata oluştu: {str(e)}")
