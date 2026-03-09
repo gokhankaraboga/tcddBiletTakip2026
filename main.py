@@ -111,15 +111,27 @@ class TCDDBiletKontrol:
         self.driver = webdriver.Chrome(service=self.service, options=self.options)
         self.sayfayi_sifirla()
 
-    def sayfayi_sifirla(self):
-        self.driver.get("https://ebilet.tcddtasimacilik.gov.tr/view/eybis/tnmGenel/tcddWebContent.jsf")
-        WebDriverWait(self.driver, 10).until(
-            EC.presence_of_element_located((By.ID, "fromTrainInput"))
-        )
+    def sayfayi_sifirla(self, max_retries=2):
+        son_hata = None
+        for deneme in range(1, max_retries + 1):
+            try:
+                self.driver.get("https://ebilet.tcddtasimacilik.gov.tr/view/eybis/tnmGenel/tcddWebContent.jsf")
+                WebDriverWait(self.driver, 15).until(
+                    EC.presence_of_element_located((By.ID, "fromTrainInput"))
+                )
+                return
+            except Exception as e:
+                son_hata = e
+                bekleme = 3 * (2 ** (deneme - 1))  # 3s, 6s, 12s
+                print(f"Sayfa yüklenemedi ({deneme}/{max_retries}): {e}")
+                if deneme < max_retries:
+                    print(f"{bekleme}s beklenip tekrar denenecek...")
+                    time.sleep(bekleme)
+        raise son_hata
 
     def istasyon_sec(self, input_id, istasyon_adi):
         son_hata = None
-        for deneme in range(1, 4):
+        for deneme in range(1, 3):
             try:
                 istasyon_input = WebDriverWait(self.driver, 8).until(
                     EC.element_to_be_clickable((By.ID, input_id))
@@ -146,7 +158,7 @@ class TCDDBiletKontrol:
             except Exception as e:
                 son_hata = e
 
-            print(f"İstasyon seçim yeniden deneniyor ({deneme}/3): {input_id} -> {istasyon_adi}")
+            print(f"İstasyon seçim yeniden deneniyor ({deneme}/2): {input_id} -> {istasyon_adi}")
             time.sleep(0.8)
 
         print(f"İstasyon seçiminde hata: {str(son_hata)}")
@@ -387,13 +399,13 @@ class TCDDBiletKontrol:
                 EC.element_to_be_clickable((By.ID, "searchSeferButton"))
             )
             sefer_bulundu = False
-            for deneme in range(1, 4):
+            for deneme in range(1, 3):
                 self.driver.execute_script("arguments[0].click();", sefer_ara_button)
                 if self._sefer_sonuclarini_bekle(timeout=25):
                     sefer_bulundu = True
                     break
                 print(
-                    f"Sefer sonucu henüz yüklenmedi ({deneme}/3): "
+                    f"Sefer sonucu henüz yüklenmedi ({deneme}/2): "
                     f"{nereden} - {nereye} | {tarih}"
                 )
                 try:
@@ -549,7 +561,11 @@ def main():
 
     result = run_checks(kombinasyonlar=kombinasyonlar, send_notification=send_notification)
     if not result.get("ok"):
-        raise SystemExit(1)
+        print("İlk deneme başarısız, 5s bekleyip tekrar deneniyor...")
+        time.sleep(5)
+        result = run_checks(kombinasyonlar=kombinasyonlar, send_notification=send_notification)
+        if not result.get("ok"):
+            raise SystemExit(1)
 
 if __name__ == "__main__":
     main()
