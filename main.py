@@ -559,13 +559,19 @@ def main():
     if combo_index is not None:
         print(f"Sadece COMBO_INDEX={combo_index} çalıştırılıyor.")
 
+    try:
+        result = run_checks(kombinasyonlar=kombinasyonlar, send_notification=send_notification)
+        if result.get("ok"):
+            return
+    except Exception as e:
+        print(f"İlk deneme hata ile başarısız: {e}")
+
+    print("5s bekleyip tekrar deneniyor...")
+    time.sleep(5)
+
     result = run_checks(kombinasyonlar=kombinasyonlar, send_notification=send_notification)
     if not result.get("ok"):
-        print("İlk deneme başarısız, 5s bekleyip tekrar deneniyor...")
-        time.sleep(5)
-        result = run_checks(kombinasyonlar=kombinasyonlar, send_notification=send_notification)
-        if not result.get("ok"):
-            raise SystemExit(1)
+        raise SystemExit(1)
 
 if __name__ == "__main__":
     main()
